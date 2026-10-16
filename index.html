@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Sam 샘</title>
 <meta name="theme-color" content="#1f6f5c">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <style>
   :root {
     --bg: #f6f4ee; --card: #ffffff; --ink: #1d2421; --sub: #6b736f;
@@ -253,6 +256,11 @@ $('backBtn').onclick = () => { speechSynthesis?.cancel(); show('home'); };
 
 drawHome();
 show('home');
+
+// 앱 설치(APK)용 서비스 워커 등록
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
 </script>
 </body>
 </html>
