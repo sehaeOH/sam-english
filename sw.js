@@ -1,6 +1,6 @@
 // 서비스 워커: 앱으로 설치되게 하고, 화면 파일을 저장해 빠르게 열어요.
 // AI 대화(/api)는 항상 인터넷으로 보내요.
-const CACHE = 'sam-v1';
+const CACHE = 'sam-v2';
 const FILES = ['/', '/index.html', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {

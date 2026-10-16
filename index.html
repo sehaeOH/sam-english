@@ -63,6 +63,23 @@
   #input:focus { border-color: var(--main); }
   #send { background: var(--main); color: #fff; border: 0; border-radius: 22px; padding: 0 18px; font-size: 15px; }
   #send:disabled { opacity: .5; }
+
+  /* 🎤 말하기 바 */
+  .voice { background: var(--card); border-top: 1px solid var(--line);
+    padding: 10px 16px calc(12px + env(safe-area-inset-bottom)); text-align: center; }
+  #live { min-height: 22px; font-size: 15px; color: var(--sub); margin-bottom: 8px; }
+  .vrow { display: flex; align-items: center; justify-content: center; gap: 22px; }
+  #mic { width: 76px; height: 76px; border-radius: 50%; border: 0; background: var(--main);
+    color: #fff; font-size: 32px; box-shadow: 0 4px 14px rgba(31,111,92,.35); }
+  #mic.on { background: #d9534f; animation: pulse 1.2s infinite; }
+  #mic:disabled { opacity: .45; animation: none; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(217,83,79,.5)} 100%{box-shadow:0 0 0 18px rgba(217,83,79,0)} }
+  .side { width: 52px; border: 1px solid var(--line); background: #fafaf7; border-radius: 14px;
+    padding: 7px 0; font-size: 12px; color: var(--sub); line-height: 1.3; }
+  .side.on { border-color: var(--main); color: var(--main); background: var(--main-soft); }
+  .side b { display: block; font-size: 18px; font-weight: normal; }
+  #form { display: none; }
+  #form.show { display: flex; }
 </style>
 </head>
 <body>
@@ -83,9 +100,17 @@
     <div class="topic" id="topic"></div>
     <div id="log"></div>
     <form id="form">
-      <input id="input" placeholder="영어로 답해보세요 (한국어도 OK)" autocomplete="off">
+      <input id="input" placeholder="영어로 써보세요 (한국어도 OK)" autocomplete="off">
       <button id="send">보내기</button>
     </form>
+    <div class="voice">
+      <div id="live">🎤 버튼을 누르고 영어로 말해보세요</div>
+      <div class="vrow">
+        <button class="side" id="koBtn" title="막히면 한국어로 말하기"><b>🇰🇷</b>한국어로</button>
+        <button id="mic" aria-label="말하기">🎤</button>
+        <button class="side" id="kbBtn" title="글자로 입력"><b>⌨️</b>글자로</button>
+      </div>
+    </div>
   </section>
 </div>
 
@@ -141,12 +166,19 @@ function show(screen) {
 }
 
 // ===== 원어민 목소리로 읽기 (브라우저 기능, 무료) =====
-function speak(text) {
-  if (!('speechSynthesis' in window)) return;
+function speak(text, onDone) {
+  if (!('speechSynthesis' in window) || !text) { onDone && onDone(); return; }
+  stopListening();
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'en-US';
   u.rate = 0.85; // 초보용으로 조금 천천히
+  const voice = speechSynthesis.getVoices().find((v) => v.lang === 'en-US');
+  if (voice) u.voice = voice;
+  let done = false;
+  const finish = () => { if (!done) { done = true; onDone && onDone(); } };
+  u.onend = finish;
+  u.onerror = finish;
   speechSynthesis.speak(u);
 }
 
@@ -195,6 +227,8 @@ function typing(on) {
   }
   if (!on && t) t.remove();
   $('send').disabled = on;
+  $('mic').disabled = on;
+  $('koBtn').disabled = on;
 }
 
 // ===== AI에게 물어보기 =====
@@ -213,7 +247,8 @@ async function askAI() {
     if (data.correction && data.correction.better) addFix(data.correction);
     addAI(data.reply, data.reply_ko);
     history.push({ role: 'ai', text: data.reply });
-    speak(data.reply); // 자동으로 읽어주기
+    // Sam이 말을 마치면 자동으로 마이크가 켜져요 (손 안 대고 대화)
+    speak(data.reply, () => { if (inChat()) startListening('en-US'); });
   } catch (e) {
     typing(false);
     showRetry(e.message === 'busy'
@@ -242,17 +277,95 @@ function start(sit) {
   askAI(); // AI가 먼저 말을 걸어요
 }
 
-$('form').onsubmit = (e) => {
-  e.preventDefault();
-  const text = $('input').value.trim();
+function sendText(text) {
+  text = (text || '').trim();
   if (!text || $('send').disabled) return;
-  $('input').value = '';
   addMe(text);
   history.push({ role: 'user', text });
   askAI();
+}
+
+$('form').onsubmit = (e) => {
+  e.preventDefault();
+  const t = $('input').value;
+  $('input').value = '';
+  sendText(t);
 };
 
-$('backBtn').onclick = () => { speechSynthesis?.cancel(); show('home'); };
+// ===== 🎤 내 목소리 → 글자 (브라우저 음성인식, 무료) =====
+const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+let listening = false;
+
+function inChat() { return $('chat').style.display === 'flex'; }
+function live(msg) { $('live').textContent = msg; }
+
+function startListening(lang) {
+  if (!Rec) {
+    live('이 브라우저는 음성인식이 안 돼요. 크롬에서 열거나 ⌨️ 글자로 입력하세요.');
+    return;
+  }
+  if (listening || $('mic').disabled) return;
+  speechSynthesis.cancel();
+
+  rec = new Rec();
+  rec.lang = lang;
+  rec.interimResults = true;   // 말하는 중에도 글자가 보이게
+  rec.continuous = false;      // 말을 멈추면 자동으로 끝
+  rec.maxAlternatives = 1;
+
+  let finalText = '';
+  rec.onstart = () => {
+    listening = true;
+    $('mic').classList.add('on');
+    $(lang === 'ko-KR' ? 'koBtn' : 'mic').classList.add('on');
+    live(lang === 'ko-KR' ? '🇰🇷 한국어로 말하세요… Sam이 영어로 바꿔줄게요' : '듣고 있어요… 영어로 말하세요');
+  };
+  rec.onresult = (e) => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) finalText += t; else interim += t;
+    }
+    live('🗣️ ' + (finalText + interim));
+  };
+  rec.onerror = (e) => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      live('마이크 권한이 필요해요. 주소창 옆 🔒에서 마이크를 허용해주세요.');
+    } else if (e.error === 'no-speech') {
+      live('소리가 안 들렸어요. 🎤를 눌러 다시 말해보세요.');
+    } else {
+      live('다시 🎤를 눌러주세요 (' + e.error + ')');
+    }
+  };
+  rec.onend = () => {
+    listening = false;
+    $('mic').classList.remove('on');
+    $('koBtn').classList.remove('on');
+    if (finalText.trim()) {
+      live('🎤 버튼을 누르고 영어로 말해보세요');
+      sendText(finalText);
+    }
+  };
+  try { rec.start(); } catch (e) { listening = false; }
+}
+
+function stopListening() {
+  if (rec && listening) { try { rec.stop(); } catch (e) {} }
+}
+
+$('mic').onclick = () => (listening ? stopListening() : startListening('en-US'));
+$('koBtn').onclick = () => { stopListening(); setTimeout(() => startListening('ko-KR'), 150); };
+$('kbBtn').onclick = () => {
+  const f = $('form');
+  f.classList.toggle('show');
+  $('kbBtn').classList.toggle('on', f.classList.contains('show'));
+  if (f.classList.contains('show')) { stopListening(); $('input').focus(); }
+};
+// 목소리 목록을 미리 불러오기
+if ('speechSynthesis' in window) speechSynthesis.getVoices();
+
+$('backBtn').onclick = () => { stopListening(); speechSynthesis?.cancel(); show('home'); };
 
 drawHome();
 show('home');
