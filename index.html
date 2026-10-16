@@ -213,8 +213,21 @@ async function askAI() {
     speak(data.reply); // 자동으로 읽어주기
   } catch (e) {
     typing(false);
-    addAI('⚠️ ' + e.message, '연결에 문제가 있어요. 잠시 후 다시 보내보세요.');
+    showRetry(e.message === 'busy'
+      ? 'Sam이 지금 잠깐 바빠요 😅 잠시 후 다시 눌러주세요.'
+      : '연결에 문제가 있어요: ' + e.message);
   }
+}
+
+// 실패하면 '다시 시도' 버튼 (방금 한 말은 그대로 두고 다시 물어봐요)
+function showRetry(msg) {
+  const div = document.createElement('div');
+  div.className = 'typing';
+  div.innerHTML = `<span></span><br><button style="margin-top:6px;border:1px solid var(--main);background:var(--main-soft);color:var(--main);border-radius:14px;padding:6px 14px;font-size:14px">🔄 다시 시도</button>`;
+  div.querySelector('span').textContent = msg;
+  div.querySelector('button').onclick = () => { div.remove(); askAI(); };
+  $('log').appendChild(div);
+  scrollDown();
 }
 
 function start(sit) {
