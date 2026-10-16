@@ -1,7 +1,7 @@
 // Vercel 서버 함수: Gemini API 키를 숨기고 AI와 대화합니다.
 // Vercel 환경변수에 GEMINI_API_KEY 를 넣어야 작동해요.
 
-const MODEL = 'gemini-2.5-flash'; // 오류가 나면 최신 flash 모델 이름으로 바꾸세요
+const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash'; // 오류가 나면 최신 flash 모델 이름으로 바꾸세요
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
