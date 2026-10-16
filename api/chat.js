@@ -3,6 +3,8 @@
 
 // Vercel 환경변수 GEMINI_MODEL 로 바꿀 수 있어요 (없으면 아래 이름 사용)
 const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+// 기본 모델이 붐비면 차례로 시도할 예비 모델 (구글의 '항상 최신' 별칭)
+const BACKUP_MODELS = ['gemini-flash-latest', 'gemini-flash-lite-latest'];
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -50,34 +52,49 @@ Respond ONLY in this JSON format:
     contents = [{ role: 'user', parts: [{ text: '(Start the role-play now with a short, friendly opening line. correction is null.)' }] }];
   }
 
-  try {
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: system }] },
-          contents,
-          generationConfig: { responseMimeType: 'application/json', temperature: 0.8 },
-        }),
+  const body = JSON.stringify({
+    system_instruction: { parts: [{ text: system }] },
+    contents,
+    generationConfig: { responseMimeType: 'application/json', temperature: 0.8 },
+  });
+
+  // 붐빌 때를 대비해: 같은 모델로 몇 번 다시 시도 → 그래도 안 되면 예비 모델로
+  const models = [MODEL, ...BACKUP_MODELS.filter((m) => m !== MODEL)];
+  let lastError = 'AI 응답 오류';
+
+  for (const model of models) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const r = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body }
+        );
+        const data = await r.json().catch(() => ({}));
+
+        if (r.ok) {
+          const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+          let out;
+          try {
+            out = JSON.parse(text);
+          } catch {
+            out = { reply: text, reply_ko: '', correction: null };
+          }
+          return res.status(200).json(out);
+        }
+
+        lastError = data.error?.message || `AI 응답 오류 (${r.status})`;
+        // 붐빔(503)·요청 많음(429)·일시 오류(500)만 다시 시도, 나머지는 다음 모델로
+        if (![429, 500, 503].includes(r.status)) break;
+      } catch (e) {
+        lastError = '연결 오류: ' + e.message;
       }
-    );
-
-    const data = await r.json();
-    if (!r.ok) {
-      return res.status(500).json({ error: data.error?.message || 'AI 응답 오류' });
+      await sleep(1000 * (attempt + 1)); // 1초, 2초, 3초 기다렸다가 다시
     }
-
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-    let out;
-    try {
-      out = JSON.parse(text);
-    } catch {
-      out = { reply: text, reply_ko: '', correction: null };
-    }
-    return res.status(200).json(out);
-  } catch (e) {
-    return res.status(500).json({ error: '연결 오류: ' + e.message });
   }
+
+  return res.status(503).json({ error: 'busy', detail: lastError });
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
