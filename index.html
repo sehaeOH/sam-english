@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sam 샘</title>
+<meta name="theme-color" content="#1f6f5c">
+<style>
+  :root {
+    --bg: #f6f4ee; --card: #ffffff; --ink: #1d2421; --sub: #6b736f;
+    --main: #1f6f5c; --main-soft: #e3efe9; --me: #1f6f5c; --me-ink: #fff;
+    --fix: #fff4dc; --fix-line: #e9b949; --line: #e4e1d8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  .app { max-width: 480px; margin: 0 auto; height: 100%; display: flex; flex-direction: column; }
+
+  header { padding: 14px 16px; display: flex; align-items: center; gap: 10px;
+    background: var(--main); color: #fff; }
+  header h1 { font-size: 19px; margin: 0; flex: 1; }
+  header button { background: rgba(255,255,255,.18); color: #fff; border: 0;
+    padding: 7px 12px; border-radius: 16px; font-size: 14px; }
+
+  /* 상황 선택 화면 */
+  #home { flex: 1; overflow-y: auto; padding: 18px 16px 30px; }
+  .hello { font-size: 15px; color: var(--sub); margin: 0 0 14px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .sit { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 14px 12px; text-align: left; font-size: 15px; color: var(--ink); }
+  .sit .em { font-size: 26px; display: block; margin-bottom: 6px; }
+  .sit small { color: var(--sub); font-size: 12px; }
+  .today { grid-column: 1 / -1; background: var(--main-soft); border-color: var(--main); }
+
+  /* 대화 화면 */
+  #chat { flex: 1; display: none; flex-direction: column; min-height: 0; }
+  .topic { padding: 8px 16px; font-size: 13px; color: var(--main);
+    background: var(--main-soft); border-bottom: 1px solid var(--line); }
+  #log { flex: 1; overflow-y: auto; padding: 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 84%; padding: 10px 13px; border-radius: 16px; font-size: 16px; line-height: 1.4; }
+  .ai { align-self: flex-start; background: var(--card); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .me { align-self: flex-end; background: var(--me); color: var(--me-ink); border-bottom-right-radius: 4px; }
+  .ko { display: none; font-size: 13px; color: var(--sub); margin-top: 5px; }
+  .ai.show-ko .ko { display: block; }
+  .tools { margin-top: 6px; display: flex; gap: 6px; }
+  .tools button { border: 1px solid var(--line); background: #fafaf7; border-radius: 12px;
+    font-size: 12px; padding: 3px 9px; color: var(--sub); }
+  .fix { align-self: flex-end; max-width: 88%; background: var(--fix); border-left: 4px solid var(--fix-line);
+    border-radius: 10px; padding: 9px 12px; font-size: 14px; line-height: 1.45; }
+  .fix .bad { color: #a0522d; text-decoration: line-through; }
+  .fix .good { font-weight: 600; }
+  .fix .tip { color: var(--sub); font-size: 13px; }
+  .typing { align-self: flex-start; color: var(--sub); font-size: 14px; padding: 4px 8px; }
+
+  form { display: flex; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    background: var(--card); border-top: 1px solid var(--line); }
+  #input { flex: 1; font-size: 16px; padding: 11px 14px; border: 1px solid var(--line);
+    border-radius: 22px; outline: none; }
+  #input:focus { border-color: var(--main); }
+  #send { background: var(--main); color: #fff; border: 0; border-radius: 22px; padding: 0 18px; font-size: 15px; }
+  #send:disabled { opacity: .5; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>💬 Sam 샘</h1>
+    <button id="backBtn" style="display:none">← 상황 선택</button>
+  </header>
+
+  <!-- 1) 상황 선택 -->
+  <section id="home">
+    <p class="hello">오늘은 어떤 상황에서 영어로 말해볼까요?</p>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <!-- 2) 대화 -->
+  <section id="chat">
+    <div class="topic" id="topic"></div>
+    <div id="log"></div>
+    <form id="form">
+      <input id="input" placeholder="영어로 답해보세요 (한국어도 OK)" autocomplete="off">
+      <button id="send">보내기</button>
+    </form>
+  </section>
+</div>
+
+<script>
+// ===== 상황 목록 (여기에 추가하면 버튼이 늘어나요) =====
+const SITUATIONS = [
+  { em: '☕', title: '카페에서 주문하기', en: 'Ordering coffee at a cafe' },
+  { em: '✈️', title: '공항 입국심사', en: 'Answering questions at airport immigration' },
+  { em: '🏨', title: '호텔 체크인', en: 'Checking in at a hotel' },
+  { em: '🍽️', title: '식당에서 주문하기', en: 'Ordering food at a restaurant' },
+  { em: '🗺️', title: '길 물어보기', en: 'Asking for directions on the street' },
+  { em: '🛍️', title: '옷 가게에서 쇼핑', en: 'Shopping for clothes at a store' },
+  { em: '👋', title: '처음 만난 사람과 인사', en: 'Meeting someone new and small talk' },
+  { em: '🚕', title: '택시 타기', en: 'Taking a taxi' },
+  { em: '💊', title: '약국에서 약 사기', en: 'Buying medicine at a pharmacy' },
+  { em: '🌤️', title: '주말 이야기', en: 'Talking with a friend about the weekend' },
+];
+
+const $ = (id) => document.getElementById(id);
+let current = null;   // 지금 상황
+let history = [];     // 대화 기록 (AI에게 보낼 것)
+
+// 오늘의 추천: 날짜마다 다른 상황
+function todayPick() {
+  const d = new Date();
+  const n = d.getFullYear() * 400 + d.getMonth() * 31 + d.getDate();
+  return SITUATIONS[n % SITUATIONS.length];
+}
+
+function drawHome() {
+  const t = todayPick();
+  const grid = $('grid');
+  grid.innerHTML = '';
+  const todayBtn = document.createElement('button');
+  todayBtn.className = 'sit today';
+  todayBtn.innerHTML = `<span class="em">${t.em}</span>⭐ 오늘의 추천: ${t.title}<br><small>탭해서 바로 시작</small>`;
+  todayBtn.onclick = () => start(t);
+  grid.appendChild(todayBtn);
+
+  SITUATIONS.forEach((s) => {
+    const b = document.createElement('button');
+    b.className = 'sit';
+    b.innerHTML = `<span class="em">${s.em}</span>${s.title}`;
+    b.onclick = () => start(s);
+    grid.appendChild(b);
+  });
+}
+
+function show(screen) {
+  $('home').style.display = screen === 'home' ? 'block' : 'none';
+  $('chat').style.display = screen === 'chat' ? 'flex' : 'none';
+  $('backBtn').style.display = screen === 'chat' ? 'block' : 'none';
+}
+
+// ===== 원어민 목소리로 읽기 (브라우저 기능, 무료) =====
+function speak(text) {
+  if (!('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'en-US';
+  u.rate = 0.85; // 초보용으로 조금 천천히
+  speechSynthesis.speak(u);
+}
+
+function addAI(reply, ko) {
+  const div = document.createElement('div');
+  div.className = 'msg ai';
+  div.innerHTML = `<div class="en"></div><div class="ko"></div>
+    <div class="tools"><button data-a="say">🔊 듣기</button><button data-a="ko">🇰🇷 뜻</button></div>`;
+  div.querySelector('.en').textContent = reply;
+  div.querySelector('.ko').textContent = ko || '';
+  div.querySelector('[data-a=say]').onclick = () => speak(reply);
+  div.querySelector('[data-a=ko]').onclick = () => div.classList.toggle('show-ko');
+  $('log').appendChild(div);
+  scrollDown();
+}
+
+function addMe(text) {
+  const div = document.createElement('div');
+  div.className = 'msg me';
+  div.textContent = text;
+  $('log').appendChild(div);
+  scrollDown();
+}
+
+function addFix(c) {
+  const div = document.createElement('div');
+  div.className = 'fix';
+  div.innerHTML = `✏️ <span class="bad"></span><br>👉 <span class="good"></span>
+    <button style="border:0;background:none;font-size:14px">🔊</button><br><span class="tip"></span>`;
+  div.querySelector('.bad').textContent = c.original || '';
+  div.querySelector('.good').textContent = c.better || '';
+  div.querySelector('.tip').textContent = c.tip_ko || '';
+  div.querySelector('button').onclick = () => speak(c.better);
+  $('log').appendChild(div);
+  scrollDown();
+}
+
+function scrollDown() { $('log').scrollTop = $('log').scrollHeight; }
+
+function typing(on) {
+  let t = document.getElementById('typing');
+  if (on && !t) {
+    t = document.createElement('div');
+    t.id = 'typing'; t.className = 'typing'; t.textContent = '입력 중…';
+    $('log').appendChild(t); scrollDown();
+  }
+  if (!on && t) t.remove();
+  $('send').disabled = on;
+}
+
+// ===== AI에게 물어보기 =====
+async function askAI() {
+  typing(true);
+  try {
+    const r = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ situation: current.en, history }),
+    });
+    const data = await r.json();
+    typing(false);
+    if (!r.ok) throw new Error(data.error || '오류');
+
+    if (data.correction && data.correction.better) addFix(data.correction);
+    addAI(data.reply, data.reply_ko);
+    history.push({ role: 'ai', text: data.reply });
+    speak(data.reply); // 자동으로 읽어주기
+  } catch (e) {
+    typing(false);
+    addAI('⚠️ ' + e.message, '연결에 문제가 있어요. 잠시 후 다시 보내보세요.');
+  }
+}
+
+function start(sit) {
+  current = sit;
+  history = [];
+  $('log').innerHTML = '';
+  $('topic').textContent = `${sit.em} ${sit.title}`;
+  show('chat');
+  askAI(); // AI가 먼저 말을 걸어요
+}
+
+$('form').onsubmit = (e) => {
+  e.preventDefault();
+  const text = $('input').value.trim();
+  if (!text || $('send').disabled) return;
+  $('input').value = '';
+  addMe(text);
+  history.push({ role: 'user', text });
+  askAI();
+};
+
+$('backBtn').onclick = () => { speechSynthesis?.cancel(); show('home'); };
+
+drawHome();
+show('home');
+</script>
+</body>
+</html>
